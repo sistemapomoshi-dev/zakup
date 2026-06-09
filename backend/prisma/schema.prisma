@@ -1,0 +1,511 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  manager
+  approver
+  admin
+
+  @@map("user_role")
+}
+
+enum SupplierStatus {
+  active
+  inactive
+
+  @@map("supplier_status")
+}
+
+enum MailboxSyncStatus {
+  idle
+  syncing
+  error
+
+  @@map("mailbox_sync_status")
+}
+
+enum EmailLinkStatus {
+  auto
+  manual
+  unlinked
+
+  @@map("email_link_status")
+}
+
+enum EmailDirection {
+  inbound
+  outbound
+
+  @@map("email_direction")
+}
+
+enum AttachmentParseStatus {
+  pending
+  parsing
+  parsed
+  failed
+  skipped
+
+  @@map("attachment_parse_status")
+}
+
+enum ParsedPriceSource {
+  excel
+  csv
+  pdf
+  ocr
+
+  @@map("parsed_price_source")
+}
+
+enum Marketplace {
+  wildberries
+  ozon
+  yandex_market
+  megamarket
+  aliexpress
+  website
+
+  @@map("marketplace")
+}
+
+enum ProductMarketLinkSource {
+  auto_barcode
+  auto_article
+  manual
+
+  @@map("product_market_link_source")
+}
+
+enum EmailDraftStatus {
+  draft
+  pending_review
+  approved
+  rejected
+  sent
+
+  @@map("email_draft_status")
+}
+
+enum DraftVersionSource {
+  ai
+  user
+
+  @@map("draft_version_source")
+}
+
+enum NegotiationStatus {
+  active
+  closed
+
+  @@map("negotiation_status")
+}
+
+enum NegotiationItemScope {
+  supplier
+  category
+  sku
+
+  @@map("negotiation_item_scope")
+}
+
+model User {
+  id                  String               @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  email               String               @unique
+  passwordHash        String               @map("password_hash")
+  displayName         String?              @map("display_name")
+  role                UserRole             @default(manager)
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
+  sessions            AuthSession[]
+  assignedSuppliers   Supplier[]           @relation("SupplierManager")
+  supplierAssignments SupplierAssignment[]
+  mailboxConnection   MailboxConnection?
+  approvedDrafts      EmailDraft[]         @relation("DraftApprover")
+  managedNegotiations Negotiation[]        @relation("NegotiationManager")
+
+  @@map("users")
+}
+
+model AuthSession {
+  id               String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  userId           String    @db.Uuid @map("user_id")
+  refreshTokenHash String    @unique(map: "auth_sessions_refresh_token_hash_key") @map("refresh_token_hash")
+  expiresAt        DateTime  @map("expires_at")
+  revokedAt        DateTime? @map("revoked_at")
+  userAgent        String?   @map("user_agent")
+  ipAddress        String?   @map("ip_address")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade, map: "auth_sessions_user_id_fkey")
+
+  @@index([userId], map: "auth_sessions_user_id_idx")
+  @@index([expiresAt], map: "auth_sessions_expires_at_idx")
+  @@map("auth_sessions")
+}
+
+model Supplier {
+  id                     String              @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  name                   String
+  email                  String?
+  status                 SupplierStatus      @default(active)
+  moyskladCounterpartyId String?             @unique @map("moysklad_counterparty_id")
+  assignedManagerId      String?             @db.Uuid @map("assigned_manager_id")
+  createdAt              DateTime            @default(now()) @map("created_at")
+  updatedAt              DateTime            @updatedAt @map("updated_at")
+  assignedManager        User?               @relation("SupplierManager", fields: [assignedManagerId], references: [id], onDelete: SetNull)
+  moyskladCounterparty   MoySkladCounterparty? @relation("SupplierMoySkladCounterparty", fields: [moyskladCounterpartyId], references: [id], onDelete: SetNull)
+  assignments            SupplierAssignment[]
+  contacts               SupplierContact[]
+  emailThreads           EmailThread[]
+  negotiations           Negotiation[]
+  emailDrafts            EmailDraft[]
+
+  @@index([name], map: "suppliers_name_idx")
+  @@index([assignedManagerId], map: "suppliers_assigned_manager_id_idx")
+  @@index([email], map: "suppliers_email_idx")
+  @@map("suppliers")
+}
+
+model SupplierAssignment {
+  id         String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  supplierId String   @db.Uuid @map("supplier_id")
+  managerId  String   @db.Uuid @map("manager_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+  supplier   Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  manager    User     @relation(fields: [managerId], references: [id], onDelete: Cascade)
+
+  @@unique([supplierId, managerId], map: "supplier_assignments_supplier_manager_key")
+  @@map("supplier_assignments")
+}
+
+model SupplierContact {
+  id         String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  supplierId String   @db.Uuid @map("supplier_id")
+  email      String
+  domain     String?
+  isPrimary  Boolean  @default(false) @map("is_primary")
+  createdAt  DateTime @default(now()) @map("created_at")
+  supplier   Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@unique([supplierId, email], map: "supplier_contacts_supplier_email_key")
+  @@index([email], map: "supplier_contacts_email_idx")
+  @@index([domain], map: "supplier_contacts_domain_idx")
+  @@map("supplier_contacts")
+}
+
+model MailboxConnection {
+  id                String            @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  userId            String            @unique @db.Uuid @map("user_id")
+  imapHost          String            @map("imap_host")
+  imapPort          Int               @default(993) @map("imap_port")
+  imapSecure        Boolean           @default(true) @map("imap_secure")
+  smtpHost          String            @map("smtp_host")
+  smtpPort          Int               @default(587) @map("smtp_port")
+  smtpSecure        Boolean           @default(false) @map("smtp_secure")
+  email             String
+  login             String
+  passwordEncrypted String            @map("password_encrypted")
+  syncStatus        MailboxSyncStatus @default(idle) @map("sync_status")
+  lastSyncAt        DateTime?         @map("last_sync_at")
+  lastSyncError     String?           @map("last_sync_error")
+  historyImportedAt DateTime?         @map("history_imported_at")
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("mailbox_connections")
+}
+
+model EmailThread {
+  id            String          @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  mailboxUserId String          @db.Uuid @map("mailbox_user_id")
+  supplierId    String?         @db.Uuid @map("supplier_id")
+  subject       String
+  threadKey     String          @map("thread_key")
+  linkStatus    EmailLinkStatus @default(unlinked) @map("link_status")
+  lastMessageAt DateTime        @map("last_message_at")
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+  supplier      Supplier?       @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  messages      EmailMessage[]
+  emailDrafts   EmailDraft[]
+
+  @@unique([mailboxUserId, threadKey], map: "email_threads_mailbox_thread_key")
+  @@index([supplierId], map: "email_threads_supplier_id_idx")
+  @@index([mailboxUserId, lastMessageAt], map: "email_threads_mailbox_last_message_idx")
+  @@map("email_threads")
+}
+
+model EmailMessage {
+  id             String           @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  threadId       String           @db.Uuid @map("thread_id")
+  mailboxUserId  String           @db.Uuid @map("mailbox_user_id")
+  imapUid        Int?             @map("imap_uid")
+  messageId      String           @map("message_id")
+  inReplyTo      String?          @map("in_reply_to")
+  fromEmail      String           @map("from_email")
+  fromName       String?          @map("from_name")
+  toEmails       String[]         @map("to_emails")
+  subject        String
+  bodyText       String?          @map("body_text")
+  bodyHtml       String?          @map("body_html")
+  direction      EmailDirection
+  sentAt         DateTime         @map("sent_at")
+  hasAttachments Boolean          @default(false) @map("has_attachments")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  thread         EmailThread      @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  attachments    EmailAttachment[]
+  triggeredDrafts EmailDraft[]    @relation("DraftTriggerMessage")
+
+  @@unique([mailboxUserId, messageId], map: "email_messages_mailbox_message_id_key")
+  @@index([threadId, sentAt], map: "email_messages_thread_sent_at_idx")
+  @@index([fromEmail], map: "email_messages_from_email_idx")
+  @@map("email_messages")
+}
+
+model EmailAttachment {
+  id          String                @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  messageId   String                @db.Uuid @map("message_id")
+  filename    String
+  mimeType    String?               @map("mime_type")
+  sizeBytes   Int?                  @map("size_bytes")
+  storageKey  String?               @map("storage_key")
+  parseStatus AttachmentParseStatus @default(pending) @map("parse_status")
+  parseError  String?               @map("parse_error")
+  parsedAt    DateTime?             @map("parsed_at")
+  rowCount    Int                   @default(0) @map("row_count")
+  createdAt   DateTime              @default(now()) @map("created_at")
+  message     EmailMessage          @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  parsedRows  ParsedPriceRow[]
+
+  @@index([messageId], map: "email_attachments_message_id_idx")
+  @@index([parseStatus], map: "email_attachments_parse_status_idx")
+  @@map("email_attachments")
+}
+
+model ParsedPriceRow {
+  id           String            @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  attachmentId String            @db.Uuid @map("attachment_id")
+  rowIndex     Int               @map("row_index")
+  sku          String?
+  name         String?
+  unit         String?
+  quantity     Decimal?          @db.Decimal(18, 4)
+  price        Decimal?          @db.Decimal(18, 4)
+  currency     String?           @default("RUB")
+  source       ParsedPriceSource
+  rawValues    Json?             @map("raw_values")
+  createdAt    DateTime          @default(now()) @map("created_at")
+  attachment   EmailAttachment   @relation(fields: [attachmentId], references: [id], onDelete: Cascade)
+
+  @@index([attachmentId], map: "parsed_price_rows_attachment_id_idx")
+  @@map("parsed_price_rows")
+}
+
+model MoySkladCounterparty {
+  id        String   @id
+  name      String
+  email     String?
+  phone     String?
+  syncedAt  DateTime @default(now()) @map("synced_at")
+  suppliers Supplier[] @relation("SupplierMoySkladCounterparty")
+
+  @@map("moysklad_counterparties")
+}
+
+model MoySkladProduct {
+  id                String                     @id
+  name              String
+  code              String?
+  article           String?
+  barcodes          String[]                   @default([])
+  buyPrice          Decimal?                   @map("buy_price") @db.Decimal(18, 4)
+  salePrices        Json?                      @map("sale_prices")
+  msUpdatedAt       DateTime?                  @map("ms_updated_at")
+  syncedAt          DateTime                   @default(now()) @map("synced_at")
+  purchasePositions MoySkladPurchasePosition[]
+  marketLinks       ProductMarketLink[]
+
+  @@index([code], map: "moysklad_products_code_idx")
+  @@index([article], map: "moysklad_products_article_idx")
+  @@map("moysklad_products")
+}
+
+model MoySkladPurchaseOrder {
+  id             String                     @id
+  counterpartyId String                     @map("counterparty_id")
+  name           String
+  moment         DateTime
+  syncedAt       DateTime                   @default(now()) @map("synced_at")
+  positions      MoySkladPurchasePosition[]
+
+  @@index([counterpartyId, moment], map: "moysklad_purchase_orders_counterparty_moment_idx")
+  @@map("moysklad_purchase_orders")
+}
+
+model MoySkladPurchasePosition {
+  id              String                @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  purchaseOrderId String                @map("purchase_order_id")
+  productId       String?               @map("product_id")
+  productName     String?               @map("product_name")
+  quantity        Decimal               @db.Decimal(18, 4)
+  price           Decimal               @db.Decimal(18, 4)
+  purchaseOrder   MoySkladPurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  product         MoySkladProduct?      @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([purchaseOrderId], map: "moysklad_purchase_positions_order_id_idx")
+  @@index([productId], map: "moysklad_purchase_positions_product_id_idx")
+  @@map("moysklad_purchase_positions")
+}
+
+model MoySkladSyncState {
+  id                       String    @id @default("default")
+  lastFullSyncAt           DateTime? @map("last_full_sync_at")
+  lastCounterpartiesSyncAt DateTime? @map("last_counterparties_sync_at")
+  lastProductsSyncAt       DateTime? @map("last_products_sync_at")
+  lastPurchaseOrdersSyncAt DateTime? @map("last_purchase_orders_sync_at")
+  lastError                String?   @map("last_error")
+  updatedAt                DateTime  @updatedAt @map("updated_at")
+
+  @@map("moysklad_sync_state")
+}
+
+model ProductMarketLink {
+  id          String                  @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  productId   String                  @map("product_id")
+  marketplace Marketplace
+  externalId  String?                 @map("external_id")
+  productUrl  String?                 @map("product_url")
+  title       String?
+  source      ProductMarketLinkSource
+  isActive    Boolean                 @default(true) @map("is_active")
+  createdAt   DateTime                @default(now()) @map("created_at")
+  updatedAt   DateTime                @updatedAt @map("updated_at")
+  product     MoySkladProduct         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  snapshots   RetailPriceSnapshot[]
+
+  @@unique([productId, marketplace], map: "product_market_links_product_marketplace_key")
+  @@index([productId], map: "product_market_links_product_id_idx")
+  @@map("product_market_links")
+}
+
+model RetailPriceSnapshot {
+  id            String            @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  linkId        String            @db.Uuid @map("link_id")
+  price         Decimal           @db.Decimal(18, 4)
+  originalPrice Decimal?          @map("original_price") @db.Decimal(18, 4)
+  currency      String            @default("RUB")
+  fetchedAt     DateTime          @default(now()) @map("fetched_at")
+  link          ProductMarketLink @relation(fields: [linkId], references: [id], onDelete: Cascade)
+
+  @@index([linkId, fetchedAt], map: "retail_price_snapshots_link_fetched_idx")
+  @@map("retail_price_snapshots")
+}
+
+model RetailSyncState {
+  id             String    @id @default("default")
+  lastFullSyncAt DateTime? @map("last_full_sync_at")
+  linksSynced    Int       @default(0) @map("links_synced")
+  snapshotsSaved Int       @default(0) @map("snapshots_saved")
+  lastError      String?   @map("last_error")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@map("retail_sync_state")
+}
+
+model Negotiation {
+  id         String            @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  supplierId String            @db.Uuid @map("supplier_id")
+  managerId  String?           @db.Uuid @map("manager_id")
+  status     NegotiationStatus @default(active)
+  title      String?
+  createdAt  DateTime          @default(now()) @map("created_at")
+  updatedAt  DateTime          @updatedAt @map("updated_at")
+  supplier   Supplier          @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  manager    User?             @relation("NegotiationManager", fields: [managerId], references: [id], onDelete: SetNull)
+  strategy   NegotiationStrategy?
+  items      NegotiationItem[]
+  drafts     EmailDraft[]
+
+  @@index([supplierId], map: "negotiations_supplier_id_idx")
+  @@index([managerId], map: "negotiations_manager_id_idx")
+  @@map("negotiations")
+}
+
+model NegotiationStrategy {
+  id               String      @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  negotiationId    String      @unique @db.Uuid @map("negotiation_id")
+  supplierAnalysis String?     @map("supplier_analysis") @db.Text
+  strategyPlan     Json?       @map("strategy_plan")
+  nextStep         String?     @map("next_step") @db.Text
+  lastMessageId    String?     @db.Uuid @map("last_message_id")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
+  negotiation      Negotiation @relation(fields: [negotiationId], references: [id], onDelete: Cascade)
+
+  @@map("negotiation_strategies")
+}
+
+model NegotiationItem {
+  id            String               @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  negotiationId String               @db.Uuid @map("negotiation_id")
+  scope         NegotiationItemScope
+  sku           String?
+  category      String?
+  notes         String?              @db.Text
+  targetPrice   Decimal?             @map("target_price") @db.Decimal(18, 4)
+  createdAt     DateTime             @default(now()) @map("created_at")
+  negotiation   Negotiation          @relation(fields: [negotiationId], references: [id], onDelete: Cascade)
+
+  @@index([negotiationId], map: "negotiation_items_negotiation_id_idx")
+  @@map("negotiation_items")
+}
+
+model EmailDraft {
+  id               String           @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  supplierId       String           @db.Uuid @map("supplier_id")
+  negotiationId    String?          @db.Uuid @map("negotiation_id")
+  threadId         String?          @db.Uuid @map("thread_id")
+  triggerMessageId String?          @unique @db.Uuid @map("trigger_message_id")
+  mailboxUserId    String           @db.Uuid @map("mailbox_user_id")
+  status           EmailDraftStatus @default(draft)
+  subject          String
+  approvedById     String?          @db.Uuid @map("approved_by_id")
+  approvedAt       DateTime?        @map("approved_at")
+  rejectedReason   String?          @map("rejected_reason") @db.Text
+  sentAt           DateTime?        @map("sent_at")
+  sentMessageId    String?          @map("sent_message_id")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+  supplier         Supplier         @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  negotiation      Negotiation?     @relation(fields: [negotiationId], references: [id], onDelete: SetNull)
+  thread           EmailThread?     @relation(fields: [threadId], references: [id], onDelete: SetNull)
+  triggerMessage   EmailMessage?    @relation("DraftTriggerMessage", fields: [triggerMessageId], references: [id], onDelete: SetNull)
+  approvedBy       User?            @relation("DraftApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  versions         DraftVersion[]
+
+  @@index([supplierId, status], map: "email_drafts_supplier_status_idx")
+  @@index([status, updatedAt], map: "email_drafts_status_updated_idx")
+  @@map("email_drafts")
+}
+
+model DraftVersion {
+  id          String             @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  draftId     String             @db.Uuid @map("draft_id")
+  version     Int
+  bodyText    String             @map("body_text") @db.Text
+  source      DraftVersionSource
+  createdById String?            @db.Uuid @map("created_by_id")
+  createdAt   DateTime           @default(now()) @map("created_at")
+  draft       EmailDraft         @relation(fields: [draftId], references: [id], onDelete: Cascade)
+
+  @@unique([draftId, version], map: "draft_versions_draft_version_key")
+  @@index([draftId], map: "draft_versions_draft_id_idx")
+  @@map("draft_versions")
+}
