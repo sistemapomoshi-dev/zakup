@@ -47,7 +47,6 @@ import {
   type CreateProductMarketLinkRequest,
   type AiStatusDto,
   type EmailDraftDetailDto,
-  type EmailDraftDto,
   type EmailDraftStatusDto,
   type NegotiationDto,
   type RejectDraftRequest,

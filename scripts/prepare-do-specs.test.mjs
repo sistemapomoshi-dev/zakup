@@ -81,7 +81,7 @@ describe('prepare-do-specs', () => {
     expect(result.stderr).toBe('');
     expect(result.status).toBe(0);
 
-    const spec = readFileSync(backendSpecPath, 'utf8');
+    const spec = readGeneratedSpec(backendSpecPath);
     expect(spec).toContain('workers:');
     expect(spec).toContain('  - name: notifications');
     expect(spec).toContain('run_command: "bun run start:worker:notifications"');
@@ -103,7 +103,7 @@ describe('prepare-do-specs', () => {
     expect(result.stderr).toBe('');
     expect(result.status).toBe(0);
 
-    const spec = readFileSync(backendSpecPath, 'utf8');
+    const spec = readGeneratedSpec(backendSpecPath);
     expect(spec).toContain(`    http_port: 8080
     instance_size_slug: apps-s-1vcpu-2gb
     instance_count: 2`);
@@ -134,4 +134,8 @@ function runPrepareSpecs(extraEnv = {}, { skipReleaseGitCheck = true } = {}) {
       ...extraEnv,
     },
   });
+}
+
+function readGeneratedSpec(path) {
+  return readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
 }

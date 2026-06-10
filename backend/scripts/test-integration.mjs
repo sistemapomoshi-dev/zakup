@@ -25,6 +25,10 @@ function run(command, args, options = {}) {
     stdio: 'inherit',
   })
 
+  if (result.error) {
+    process.stderr.write(`${command} failed to start: ${result.error.message}\n`)
+  }
+
   if (result.status !== 0) {
     process.exit(result.status ?? 1)
   }
@@ -67,6 +71,6 @@ if (process.env.TEST_SKIP_DOCKER !== '1') {
   await waitForComposePostgres('postgres_test', 'web_app_demo_test', env)
 }
 
-run('bun', ['run', 'prisma:generate'], { env })
-run('bun', ['run', 'prisma:deploy'], { env })
-run('bun', ['test', 'src/auth/auth.integration.test.ts'], { env })
+run(process.execPath, ['run', 'prisma:generate'], { env })
+run(process.execPath, ['run', 'prisma:deploy'], { env })
+run(process.execPath, ['test', 'src/auth/auth.integration.test.ts'], { env })

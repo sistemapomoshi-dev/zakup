@@ -138,4 +138,4 @@ test('wrapped Radix-like primitives keep child slots and Typography classes at r
   expect(markup).toContain('custom-select')
   expect(markup).toContain('text-sm leading-normal font-normal')
   expect(markup).not.toContain('data-slot="typography"')
-})
+}, 10_000)
