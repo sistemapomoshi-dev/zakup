@@ -67,7 +67,10 @@ export async function persistAndParseAttachment(
       data,
     })
 
-    const parseResult = await parseAttachmentContent(filename, mimeType, data)
+    const parseResult = await parseAttachmentContent(filename, mimeType, data, {
+      tesseractBin: env.OCR_TESSERACT_BIN,
+      tesseractLang: env.OCR_TESSERACT_LANG,
+    })
 
     if (parseResult.status === 'parsed') {
       await db.$transaction(async (tx) => {
@@ -140,7 +143,10 @@ export async function reparseStoredAttachment(
   })
 
   const data = await readAttachmentContent(env, storageService, attachment.storageKey)
-  const parseResult = await parseAttachmentContent(attachment.filename, attachment.mimeType, data)
+  const parseResult = await parseAttachmentContent(attachment.filename, attachment.mimeType, data, {
+    tesseractBin: env.OCR_TESSERACT_BIN,
+    tesseractLang: env.OCR_TESSERACT_LANG,
+  })
 
   if (parseResult.status === 'parsed') {
     await db.$transaction(async (tx) => {

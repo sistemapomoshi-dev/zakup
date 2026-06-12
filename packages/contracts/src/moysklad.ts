@@ -13,6 +13,7 @@ export const moyskladStatusSchema = z.object({
     counterparties: z.number().int(),
     products: z.number().int(),
     purchaseOrders: z.number().int(),
+    files: z.number().int(),
   }),
 })
 
@@ -21,6 +22,7 @@ export const moyskladSyncResultSchema = z.object({
   products: z.number().int(),
   purchaseOrders: z.number().int(),
   purchasePositions: z.number().int(),
+  files: z.number().int(),
   linkedSuppliers: z.number().int(),
 })
 
@@ -51,6 +53,42 @@ export const priceComparisonListResponseSchema = z.object({
   items: z.array(priceComparisonRowSchema),
 })
 
+export const moyskladPriceSuggestionStatusSchema = z.enum(['suggested', 'confirmed', 'rejected'])
+
+export const moyskladPriceSuggestionSchema = z.object({
+  id: z.string().uuid(),
+  parsedRowId: z.string().uuid(),
+  supplierId: z.string().uuid().nullable(),
+  productId: z.string(),
+  productName: z.string(),
+  sku: z.string().nullable(),
+  name: z.string().nullable(),
+  suggestedPrice: z.number(),
+  currentPrice: z.number().nullable(),
+  priceDelta: z.number().nullable(),
+  currency: z.string(),
+  status: moyskladPriceSuggestionStatusSchema,
+  confirmedById: z.string().uuid().nullable(),
+  confirmedAt: z.string().datetime().nullable(),
+  rejectedAt: z.string().datetime().nullable(),
+  rejectionReason: z.string().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+})
+
+export const moyskladPriceSuggestionListResponseSchema = z.object({
+  items: z.array(moyskladPriceSuggestionSchema),
+})
+
+export const moyskladPriceSuggestionIdParamsSchema = z.object({
+  suggestionId: z.string().uuid(),
+})
+
+export const moyskladPriceSuggestionListQuerySchema = z.object({
+  status: moyskladPriceSuggestionStatusSchema.optional(),
+  supplierId: z.string().uuid().optional(),
+})
+
 export const moyskladAttachmentComparisonParamsSchema = z.object({
   attachmentId: z.string().uuid(),
 })
@@ -62,3 +100,5 @@ export const moyskladAttachmentComparisonQuerySchema = z.object({
 export type MoySkladStatusDto = z.infer<typeof moyskladStatusSchema>
 export type MoySkladSyncResultDto = z.infer<typeof moyskladSyncResultSchema>
 export type PriceComparisonRowDto = z.infer<typeof priceComparisonRowSchema>
+export type MoySkladPriceSuggestionStatusDto = z.infer<typeof moyskladPriceSuggestionStatusSchema>
+export type MoySkladPriceSuggestionDto = z.infer<typeof moyskladPriceSuggestionSchema>

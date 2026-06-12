@@ -6,7 +6,7 @@ test('registers, restores the session, opens protected UI, and logs out', async 
 
   await page.goto('/')
 
-  await expect(page.getByRole('heading', { name: /auth, validation/i })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Переговоры о скидках с поставщиками' })).toBeVisible()
   await page.getByRole('button', { name: 'Create account' }).click()
   await expect(page.getByText('Invalid email address')).toBeVisible()
   await expect(page.getByText('Password must be at least 8 characters')).toBeVisible()

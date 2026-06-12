@@ -22,6 +22,8 @@ maybeDescribe('auth API integration', () => {
     SPACES_DOWNLOAD_URL_TTL_SECONDS: 300,
     SPACES_PUBLIC_CACHE_CONTROL: 'public, max-age=31536000, immutable',
     ATTACHMENT_MAX_BYTES: 25 * 1024 * 1024,
+    OCR_TESSERACT_BIN: 'tesseract',
+    OCR_TESSERACT_LANG: 'rus+eng',
     MOYSKLAD_API_URL: 'https://api.moysklad.ru/api/remap/1.2',
     RETAIL_TARGET_MARGIN_PERCENT: 30,
     RETAIL_SYNC_ENABLED: true,

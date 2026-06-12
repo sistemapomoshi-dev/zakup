@@ -36,6 +36,14 @@ export type MoySkladPurchaseOrderEntity = {
   moment: string
   agent?: { meta: MoySkladMeta; name?: string }
   positions?: MoySkladListResponse<MoySkladPurchasePositionEntity>
+  files?: MoySkladFileMeta[]
+}
+
+export type MoySkladFileMeta = {
+  meta?: MoySkladMeta
+  filename?: string
+  title?: string
+  size?: number
 }
 
 export type MoySkladPurchasePositionEntity = {
@@ -61,5 +69,6 @@ export type MoySkladSyncResult = {
   products: number
   purchaseOrders: number
   purchasePositions: number
+  files: number
   linkedSuppliers: number
 }

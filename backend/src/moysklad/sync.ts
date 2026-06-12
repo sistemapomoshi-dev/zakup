@@ -1,7 +1,7 @@
 import type { DbClient } from '../db'
 import { extractIdFromHref, minorUnitsToMajor } from './config'
 import type { MoySkladClient } from './client'
-import type { MoySkladCounterpartyEntity, MoySkladPurchaseOrderEntity } from './types'
+import type { MoySkladCounterpartyEntity, MoySkladFileMeta, MoySkladPurchaseOrderEntity } from './types'
 
 export async function syncCounterparties(db: DbClient, client: MoySkladClient) {
   const rows = await client.fetchAllRows<MoySkladCounterpartyEntity>('/entity/counterparty', {
@@ -88,6 +88,7 @@ export async function syncPurchaseOrders(db: DbClient, client: MoySkladClient) {
 
   let ordersSynced = 0
   let positionsSynced = 0
+  let filesSynced = 0
 
   for (const row of rows) {
     const counterpartyId = row.agent?.meta?.href ? extractIdFromHref(row.agent.meta.href) : null
@@ -121,6 +122,7 @@ export async function syncPurchaseOrders(db: DbClient, client: MoySkladClient) {
       },
     })
     ordersSynced += 1
+    filesSynced += await syncEntityFiles(db, 'purchaseorder', row.id, row.files ?? [])
 
     await db.moySkladPurchasePosition.deleteMany({ where: { purchaseOrderId: row.id } })
 
@@ -147,7 +149,63 @@ export async function syncPurchaseOrders(db: DbClient, client: MoySkladClient) {
     positionsSynced += positions.length
   }
 
-  return { ordersSynced, positionsSynced }
+  return { ordersSynced, positionsSynced, filesSynced }
+}
+
+export function normalizeMoySkladFiles(files: MoySkladFileMeta[]) {
+  return files
+    .map((file) => {
+      const href = file.meta?.href?.trim()
+      if (!href) return null
+      const size = file.size
+
+      return {
+        href,
+        filename: file.filename?.trim() || file.title?.trim() || href.split('/').pop() || 'file',
+        sizeBytes: size !== undefined && Number.isInteger(size) && size >= 0 ? size : null,
+      }
+    })
+    .filter((file): file is { href: string; filename: string; sizeBytes: number | null } => file !== null)
+}
+
+async function syncEntityFiles(
+  db: DbClient,
+  entityType: string,
+  entityId: string,
+  files: MoySkladFileMeta[],
+) {
+  const normalizedFiles = normalizeMoySkladFiles(files)
+  const hrefs = normalizedFiles.map((file) => file.href)
+
+  await db.moySkladFile.deleteMany({
+    where: {
+      entityType,
+      entityId,
+      ...(hrefs.length > 0 ? { href: { notIn: hrefs } } : {}),
+    },
+  })
+
+  for (const file of normalizedFiles) {
+    await db.moySkladFile.upsert({
+      where: { href: file.href },
+      create: {
+        entityType,
+        entityId,
+        href: file.href,
+        filename: file.filename,
+        sizeBytes: file.sizeBytes,
+      },
+      update: {
+        entityType,
+        entityId,
+        filename: file.filename,
+        sizeBytes: file.sizeBytes,
+        syncedAt: new Date(),
+      },
+    })
+  }
+
+  return normalizedFiles.length
 }
 
 export async function linkSuppliersToCounterparties(db: DbClient) {

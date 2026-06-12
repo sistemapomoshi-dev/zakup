@@ -12,6 +12,14 @@ describe('assertDraftTransition', () => {
     expect(() => assertDraftTransition('pending_review', 'approved')).not.toThrow()
   })
 
+  test('allows approved to sent', () => {
+    expect(() => assertDraftTransition('approved', 'sent')).not.toThrow()
+  })
+
+  test('allows rejected to pending_review after edits', () => {
+    expect(() => assertDraftTransition('rejected', 'pending_review')).not.toThrow()
+  })
+
   test('rejects draft to sent', () => {
     expect(() => assertDraftTransition('draft', 'sent')).toThrow(AppError)
   })

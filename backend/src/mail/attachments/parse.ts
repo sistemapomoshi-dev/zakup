@@ -1,4 +1,5 @@
 import { detectAttachmentKind, isParseableKind } from './detect'
+import { parseImageBufferWithOcr, type OcrOptions } from './parse-ocr'
 import { parsePdfBuffer } from './parse-pdf'
 import { parseCsvBuffer, parseExcelBuffer } from './parse-spreadsheet'
 import type { ParseAttachmentResult } from './types'
@@ -7,15 +8,9 @@ export async function parseAttachmentContent(
   filename: string,
   mimeType: string | null | undefined,
   buffer: Buffer,
+  options: OcrOptions = {},
 ): Promise<ParseAttachmentResult> {
   const kind = detectAttachmentKind(filename, mimeType)
-
-  if (kind === 'image') {
-    return {
-      status: 'skipped',
-      reason: 'OCR для изображений будет добавлен отдельно; пока поддерживаются Excel, CSV и PDF',
-    }
-  }
 
   if (kind === 'unsupported') {
     return {
@@ -37,6 +32,8 @@ export async function parseAttachmentContent(
       rows = parseExcelBuffer(buffer, 'excel')
     } else if (kind === 'csv') {
       rows = parseCsvBuffer(buffer)
+    } else if (kind === 'image') {
+      rows = await parseImageBufferWithOcr(filename, buffer, options)
     } else {
       rows = await parsePdfBuffer(buffer)
     }

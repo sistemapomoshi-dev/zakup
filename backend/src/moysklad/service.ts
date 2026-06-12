@@ -20,10 +20,11 @@ export class MoySkladService {
 
   async getStatus() {
     const state = await this.db.moySkladSyncState.findUnique({ where: { id: 'default' } })
-    const [counterparties, products, purchaseOrders] = await Promise.all([
+    const [counterparties, products, purchaseOrders, files] = await Promise.all([
       this.db.moySkladCounterparty.count(),
       this.db.moySkladProduct.count(),
       this.db.moySkladPurchaseOrder.count(),
+      this.db.moySkladFile.count(),
     ])
 
     return {
@@ -37,6 +38,7 @@ export class MoySkladService {
         counterparties,
         products,
         purchaseOrders,
+        files,
       },
     }
   }
@@ -72,6 +74,7 @@ export class MoySkladService {
         products,
         purchaseOrders: purchase.ordersSynced,
         purchasePositions: purchase.positionsSynced,
+        files: purchase.filesSynced,
         linkedSuppliers,
       }
     } catch (error) {
@@ -86,6 +89,140 @@ export class MoySkladService {
     return enrichComparisonWithRetail(this.db, this.env, rows)
   }
 
+  async listPriceSuggestions(filters: {
+    status?: 'suggested' | 'confirmed' | 'rejected'
+    supplierId?: string
+  }) {
+    const suggestions = await this.db.moySkladPriceSuggestion.findMany({
+      where: {
+        ...(filters.status ? { status: filters.status } : {}),
+        ...(filters.supplierId ? { supplierId: filters.supplierId } : {}),
+      },
+      orderBy: { updatedAt: 'desc' },
+      include: {
+        product: { select: { name: true } },
+        parsedRow: { select: { sku: true, name: true } },
+      },
+    })
+    return suggestions.map(toPriceSuggestionDto)
+  }
+
+  async createPriceSuggestionsFromAttachment(attachmentId: string, supplierId: string | null) {
+    const attachment = await this.db.emailAttachment.findUnique({
+      where: { id: attachmentId },
+      select: {
+        message: {
+          select: {
+            thread: {
+              select: { supplierId: true },
+            },
+          },
+        },
+      },
+    })
+    if (!attachment) {
+      throw new AppError(404, 'NOT_FOUND', 'Attachment not found')
+    }
+
+    const effectiveSupplierId = supplierId ?? attachment.message.thread.supplierId
+    const comparisonRows = await compareAttachmentPrices(this.db, attachmentId, effectiveSupplierId)
+    const suggestions = []
+
+    for (const row of comparisonRows) {
+      if (!row.matchedProduct || row.parsedPrice == null) continue
+
+      const existing = await this.db.moySkladPriceSuggestion.findUnique({
+        where: {
+          parsedRowId_productId: {
+            parsedRowId: row.parsedRowId,
+            productId: row.matchedProduct.id,
+          },
+        },
+        include: {
+          product: { select: { name: true } },
+          parsedRow: { select: { sku: true, name: true } },
+        },
+      })
+
+      if (existing?.status === 'confirmed') {
+        suggestions.push(toPriceSuggestionDto(existing))
+        continue
+      }
+
+      const suggestion = existing
+        ? await this.db.moySkladPriceSuggestion.update({
+            where: { id: existing.id },
+            data: {
+              supplierId: effectiveSupplierId,
+              suggestedPrice: row.parsedPrice,
+              currentPrice: row.ourLastPurchasePrice,
+              priceDelta: row.priceDelta,
+              currency: 'RUB',
+              status: 'suggested',
+              confirmedById: null,
+              confirmedAt: null,
+              rejectedAt: null,
+              rejectionReason: null,
+            },
+            include: {
+              product: { select: { name: true } },
+              parsedRow: { select: { sku: true, name: true } },
+            },
+          })
+        : await this.db.moySkladPriceSuggestion.create({
+            data: {
+              parsedRowId: row.parsedRowId,
+              supplierId: effectiveSupplierId,
+              productId: row.matchedProduct.id,
+              suggestedPrice: row.parsedPrice,
+              currentPrice: row.ourLastPurchasePrice,
+              priceDelta: row.priceDelta,
+              currency: 'RUB',
+            },
+            include: {
+              product: { select: { name: true } },
+              parsedRow: { select: { sku: true, name: true } },
+            },
+          })
+
+      suggestions.push(toPriceSuggestionDto(suggestion))
+    }
+
+    return suggestions
+  }
+
+  async confirmPriceSuggestion(actorId: string, suggestionId: string) {
+    const suggestion = await this.db.moySkladPriceSuggestion.findUnique({
+      where: { id: suggestionId },
+      include: {
+        product: { select: { name: true } },
+        parsedRow: { select: { sku: true, name: true } },
+      },
+    })
+    if (!suggestion) {
+      throw new AppError(404, 'NOT_FOUND', 'Price suggestion not found')
+    }
+    if (suggestion.status === 'confirmed') {
+      return toPriceSuggestionDto(suggestion)
+    }
+
+    const updated = await this.db.moySkladPriceSuggestion.update({
+      where: { id: suggestionId },
+      data: {
+        status: 'confirmed',
+        confirmedById: actorId,
+        confirmedAt: new Date(),
+        rejectedAt: null,
+        rejectionReason: null,
+      },
+      include: {
+        product: { select: { name: true } },
+        parsedRow: { select: { sku: true, name: true } },
+      },
+    })
+    return toPriceSuggestionDto(updated)
+  }
+
   private async touchSyncState(data: {
     lastFullSyncAt?: Date
     lastCounterpartiesSyncAt?: Date
@@ -98,5 +235,46 @@ export class MoySkladService {
       create: { id: 'default', ...data },
       update: data,
     })
+  }
+}
+
+function toPriceSuggestionDto(suggestion: {
+  id: string
+  parsedRowId: string
+  supplierId: string | null
+  productId: string
+  suggestedPrice: unknown
+  currentPrice: unknown
+  priceDelta: unknown
+  currency: string
+  status: 'suggested' | 'confirmed' | 'rejected'
+  confirmedById: string | null
+  confirmedAt: Date | null
+  rejectedAt: Date | null
+  rejectionReason: string | null
+  createdAt: Date
+  updatedAt: Date
+  product: { name: string }
+  parsedRow: { sku: string | null; name: string | null }
+}) {
+  return {
+    id: suggestion.id,
+    parsedRowId: suggestion.parsedRowId,
+    supplierId: suggestion.supplierId,
+    productId: suggestion.productId,
+    productName: suggestion.product.name,
+    sku: suggestion.parsedRow.sku,
+    name: suggestion.parsedRow.name,
+    suggestedPrice: Number(suggestion.suggestedPrice),
+    currentPrice: suggestion.currentPrice != null ? Number(suggestion.currentPrice) : null,
+    priceDelta: suggestion.priceDelta != null ? Number(suggestion.priceDelta) : null,
+    currency: suggestion.currency,
+    status: suggestion.status,
+    confirmedById: suggestion.confirmedById,
+    confirmedAt: suggestion.confirmedAt?.toISOString() ?? null,
+    rejectedAt: suggestion.rejectedAt?.toISOString() ?? null,
+    rejectionReason: suggestion.rejectionReason,
+    createdAt: suggestion.createdAt.toISOString(),
+    updatedAt: suggestion.updatedAt.toISOString(),
   }
 }

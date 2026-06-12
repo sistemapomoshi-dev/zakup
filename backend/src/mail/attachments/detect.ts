@@ -40,5 +40,5 @@ export function detectAttachmentKind(filename: string, mimeType: string | null |
 }
 
 export function isParseableKind(kind: AttachmentKind) {
-  return kind === 'excel' || kind === 'csv' || kind === 'pdf'
+  return kind === 'excel' || kind === 'csv' || kind === 'pdf' || kind === 'image'
 }

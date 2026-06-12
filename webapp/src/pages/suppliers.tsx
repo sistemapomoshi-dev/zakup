@@ -141,7 +141,8 @@ export function SuppliersPage() {
                 {moyskladStatusQuery.data.configured && (
                   <Typography variant="bodySm" tone="muted">
                     Номенклатура: {moyskladStatusQuery.data.counts.products} · Заказы:{' '}
-                    {moyskladStatusQuery.data.counts.purchaseOrders}
+                    {moyskladStatusQuery.data.counts.purchaseOrders} · Файлы:{' '}
+                    {moyskladStatusQuery.data.counts.files}
                     {moyskladStatusQuery.data.lastFullSyncAt &&
                       ` · синк ${new Date(moyskladStatusQuery.data.lastFullSyncAt).toLocaleString()}`}
                   </Typography>

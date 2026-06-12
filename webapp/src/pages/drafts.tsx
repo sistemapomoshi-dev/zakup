@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -191,6 +191,12 @@ export function DraftsPage() {
   const auth = useAuth()
   const [selectedDraft, setSelectedDraft] = useState<EmailDraftDto | null>(null)
   const [statusFilter, setStatusFilter] = useState<EmailDraftStatusDto | 'all'>('all')
+
+  useEffect(() => {
+    if (auth.user?.role === 'approver' && statusFilter === 'all') {
+      setStatusFilter('pending_review')
+    }
+  }, [auth.user?.role, statusFilter])
 
   const draftsQuery = useQuery({
     queryKey: ['drafts', statusFilter],

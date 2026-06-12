@@ -56,6 +56,8 @@ const envSchema = z.object({
   SPACES_PUBLIC_CACHE_CONTROL: stringWithDefault('public, max-age=31536000, immutable'),
   ATTACHMENT_LOCAL_DIR: optionalStringSchema,
   ATTACHMENT_MAX_BYTES: z.coerce.number().int().positive().default(25 * 1024 * 1024),
+  OCR_TESSERACT_BIN: stringWithDefault('tesseract'),
+  OCR_TESSERACT_LANG: stringWithDefault('rus+eng'),
   MOYSKLAD_API_URL: stringWithDefault('https://api.moysklad.ru/api/remap/1.2'),
   MOYSKLAD_LOGIN: optionalStringSchema,
   MOYSKLAD_PASSWORD: optionalStringSchema,

@@ -19,6 +19,8 @@ describe('loadEnv', () => {
     expect(env.SPACES_UPLOAD_URL_TTL_SECONDS).toBe(900)
     expect(env.SPACES_DOWNLOAD_URL_TTL_SECONDS).toBe(300)
     expect(env.SPACES_PUBLIC_CACHE_CONTROL).toBe('public, max-age=31536000, immutable')
+    expect(env.OCR_TESSERACT_BIN).toBe('tesseract')
+    expect(env.OCR_TESSERACT_LANG).toBe('rus+eng')
     expect(env.RETAIL_TARGET_MARGIN_PERCENT).toBe(30)
     expect(env.RETAIL_SYNC_ENABLED).toBe(true)
   })

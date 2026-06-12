@@ -83,6 +83,14 @@ enum ProductMarketLinkSource {
   @@map("product_market_link_source")
 }
 
+enum MoySkladPriceSuggestionStatus {
+  suggested
+  confirmed
+  rejected
+
+  @@map("moysklad_price_suggestion_status")
+}
+
 enum EmailDraftStatus {
   draft
   pending_review
@@ -129,6 +137,7 @@ model User {
   mailboxConnection   MailboxConnection?
   approvedDrafts      EmailDraft[]         @relation("DraftApprover")
   managedNegotiations Negotiation[]        @relation("NegotiationManager")
+  confirmedPriceSuggestions MoySkladPriceSuggestion[] @relation("PriceSuggestionConfirmer")
 
   @@map("users")
 }
@@ -166,6 +175,7 @@ model Supplier {
   emailThreads           EmailThread[]
   negotiations           Negotiation[]
   emailDrafts            EmailDraft[]
+  priceSuggestions       MoySkladPriceSuggestion[]
 
   @@index([name], map: "suppliers_name_idx")
   @@index([assignedManagerId], map: "suppliers_assigned_manager_id_idx")
@@ -304,6 +314,7 @@ model ParsedPriceRow {
   rawValues    Json?             @map("raw_values")
   createdAt    DateTime          @default(now()) @map("created_at")
   attachment   EmailAttachment   @relation(fields: [attachmentId], references: [id], onDelete: Cascade)
+  priceSuggestions MoySkladPriceSuggestion[]
 
   @@index([attachmentId], map: "parsed_price_rows_attachment_id_idx")
   @@map("parsed_price_rows")
@@ -332,6 +343,7 @@ model MoySkladProduct {
   syncedAt          DateTime                   @default(now()) @map("synced_at")
   purchasePositions MoySkladPurchasePosition[]
   marketLinks       ProductMarketLink[]
+  priceSuggestions  MoySkladPriceSuggestion[]
 
   @@index([code], map: "moysklad_products_code_idx")
   @@index([article], map: "moysklad_products_article_idx")
@@ -348,6 +360,46 @@ model MoySkladPurchaseOrder {
 
   @@index([counterpartyId, moment], map: "moysklad_purchase_orders_counterparty_moment_idx")
   @@map("moysklad_purchase_orders")
+}
+
+model MoySkladFile {
+  id         String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id")
+  href       String   @unique
+  filename   String
+  sizeBytes  Int?     @map("size_bytes")
+  syncedAt   DateTime @default(now()) @map("synced_at")
+
+  @@index([entityType, entityId], map: "moysklad_files_entity_idx")
+  @@map("moysklad_files")
+}
+
+model MoySkladPriceSuggestion {
+  id             String                         @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  parsedRowId    String                         @db.Uuid @map("parsed_row_id")
+  supplierId     String?                        @db.Uuid @map("supplier_id")
+  productId      String                         @map("product_id")
+  suggestedPrice Decimal                        @map("suggested_price") @db.Decimal(18, 4)
+  currentPrice   Decimal?                       @map("current_price") @db.Decimal(18, 4)
+  priceDelta     Decimal?                       @map("price_delta") @db.Decimal(18, 4)
+  currency       String                         @default("RUB")
+  status         MoySkladPriceSuggestionStatus  @default(suggested)
+  confirmedById  String?                        @db.Uuid @map("confirmed_by_id")
+  confirmedAt    DateTime?                      @map("confirmed_at")
+  rejectedAt     DateTime?                      @map("rejected_at")
+  rejectionReason String?                       @map("rejection_reason") @db.Text
+  createdAt      DateTime                       @default(now()) @map("created_at")
+  updatedAt      DateTime                       @updatedAt @map("updated_at")
+  parsedRow      ParsedPriceRow                 @relation(fields: [parsedRowId], references: [id], onDelete: Cascade)
+  supplier       Supplier?                      @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  product        MoySkladProduct                @relation(fields: [productId], references: [id], onDelete: Cascade)
+  confirmedBy    User?                          @relation("PriceSuggestionConfirmer", fields: [confirmedById], references: [id], onDelete: SetNull)
+
+  @@unique([parsedRowId, productId], map: "moysklad_price_suggestions_row_product_key")
+  @@index([supplierId, status], map: "moysklad_price_suggestions_supplier_status_idx")
+  @@index([productId, status], map: "moysklad_price_suggestions_product_status_idx")
+  @@map("moysklad_price_suggestions")
 }
 
 model MoySkladPurchasePosition {

@@ -185,17 +185,45 @@ export class DraftService {
       inReplyTo: triggerMessage?.messageId ?? null,
     })
 
-    const updated = await this.db.emailDraft.update({
-      where: { id: draftId },
-      data: {
-        status: 'sent',
-        sentAt: sent.sentAt,
-        sentMessageId: sent.messageId,
-      },
-      include: {
-        supplier: { select: { name: true, email: true, assignedManagerId: true } },
-        versions: { orderBy: { version: 'desc' } },
-      },
+    const updated = await this.db.$transaction(async (tx) => {
+      if (draft.threadId) {
+        await tx.emailMessage.create({
+          data: {
+            threadId: draft.threadId,
+            mailboxUserId: draft.mailboxUserId,
+            messageId: sent.messageId,
+            inReplyTo: triggerMessage?.messageId ?? null,
+            fromEmail: mailbox.email.toLowerCase(),
+            fromName: null,
+            toEmails: [supplierEmail],
+            subject: draft.subject,
+            bodyText: latest.bodyText,
+            direction: 'outbound',
+            sentAt: sent.sentAt,
+            hasAttachments: false,
+          },
+        })
+        await tx.emailThread.update({
+          where: { id: draft.threadId },
+          data: {
+            supplierId: draft.supplierId,
+            lastMessageAt: sent.sentAt,
+          },
+        })
+      }
+
+      return tx.emailDraft.update({
+        where: { id: draftId },
+        data: {
+          status: 'sent',
+          sentAt: sent.sentAt,
+          sentMessageId: sent.messageId,
+        },
+        include: {
+          supplier: { select: { name: true, email: true, assignedManagerId: true } },
+          versions: { orderBy: { version: 'desc' } },
+        },
+      })
     })
 
     return toDraftDetailDto(updated)

@@ -3,10 +3,12 @@ import { describe, expect, test } from 'bun:test'
 import { detectAttachmentKind } from './detect'
 import {
   detectColumnMapping,
+  extractRowsFromPlainText,
   extractRowsFromSheet,
   findHeaderRowIndex,
   parseNumericValue,
 } from './extract-rows'
+import { parseOcrText } from './parse-ocr'
 
 describe('attachment detect', () => {
   test('detects excel, csv, pdf and image kinds', () => {
@@ -66,6 +68,21 @@ describe('parse spreadsheet buffer', () => {
       name: 'Кабель USB',
       price: 150.25,
       source: 'csv',
+    })
+  })
+})
+
+describe('parse OCR text', () => {
+  test('extracts price rows from recognized image text', () => {
+    const text = 'Артикул;Наименование;Цена\nP-1;Кабель USB;150,25\nP-2;Адаптер;89,00\n'
+
+    expect(parseOcrText(text)).toEqual(extractRowsFromPlainText(text, 'ocr'))
+    expect(parseOcrText(text)).toHaveLength(2)
+    expect(parseOcrText(text)[0]).toMatchObject({
+      sku: 'P-1',
+      name: 'Кабель USB',
+      price: 150.25,
+      source: 'ocr',
     })
   })
 })

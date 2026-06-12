@@ -42,3 +42,82 @@ jobs:
 
       - name: Webapp E2E smoke
         run: bun run e2e:webapp
+
+  deploy-static-yandex:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: validate
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.YANDEX_STATIC_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.YANDEX_STATIC_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ru-central1
+      YANDEX_STORAGE_ENDPOINT: https://storage.yandexcloud.net
+      YANDEX_WEBAPP_BUCKET: ${{ secrets.YANDEX_WEBAPP_BUCKET }}
+      YANDEX_WEBSITE_BUCKET: ${{ secrets.YANDEX_WEBSITE_BUCKET }}
+      VITE_API_URL: ${{ secrets.YANDEX_API_URL }}
+      PUBLIC_WEBAPP_URL: ${{ secrets.YANDEX_WEBAPP_URL }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build static sites
+        run: |
+          bun run build:webapp
+          bun run build:website
+
+      - name: Upload static files to Yandex Object Storage
+        run: |
+          aws --endpoint-url="$YANDEX_STORAGE_ENDPOINT" s3 cp --recursive webapp/dist/ "s3://$YANDEX_WEBAPP_BUCKET/"
+          aws --endpoint-url="$YANDEX_STORAGE_ENDPOINT" s3 cp --recursive website/dist/ "s3://$YANDEX_WEBSITE_BUCKET/"
+
+      - name: Fix Yandex Object Storage MIME types
+        run: |
+          set -euo pipefail
+
+          fix_mime() {
+            local bucket="$1"
+
+            aws --endpoint-url="$YANDEX_STORAGE_ENDPOINT" s3 cp "s3://$bucket/" "s3://$bucket/" \
+              --recursive \
+              --exclude "*" \
+              --include "*.html" \
+              --content-type "text/html; charset=utf-8" \
+              --cache-control "no-cache" \
+              --metadata-directive REPLACE
+
+            aws --endpoint-url="$YANDEX_STORAGE_ENDPOINT" s3 cp "s3://$bucket/" "s3://$bucket/" \
+              --recursive \
+              --exclude "*" \
+              --include "*.svg" \
+              --content-type "image/svg+xml" \
+              --cache-control "public, max-age=31536000, immutable" \
+              --metadata-directive REPLACE
+
+            aws --endpoint-url="$YANDEX_STORAGE_ENDPOINT" s3 cp "s3://$bucket/" "s3://$bucket/" \
+              --recursive \
+              --exclude "*" \
+              --include "*.js" \
+              --content-type "application/javascript; charset=utf-8" \
+              --cache-control "public, max-age=31536000, immutable" \
+              --metadata-directive REPLACE
+
+            aws --endpoint-url="$YANDEX_STORAGE_ENDPOINT" s3 cp "s3://$bucket/" "s3://$bucket/" \
+              --recursive \
+              --exclude "*" \
+              --include "*.css" \
+              --content-type "text/css; charset=utf-8" \
+              --cache-control "public, max-age=31536000, immutable" \
+              --metadata-directive REPLACE
+          }
+
+          fix_mime "$YANDEX_WEBAPP_BUCKET"
+          fix_mime "$YANDEX_WEBSITE_BUCKET"

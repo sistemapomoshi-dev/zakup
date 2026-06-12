@@ -24,6 +24,15 @@ export type NegotiationContext = {
   currentStrategy: string | null
 }
 
+type ThreadMessageForContext = {
+  direction: string
+  fromEmail: string
+  fromName: string | null
+  sentAt: Date
+  bodyText: string | null
+  subject: string
+}
+
 export async function buildNegotiationContext(
   db: DbClient,
   env: AppEnv,
@@ -39,7 +48,7 @@ export async function buildNegotiationContext(
     db.emailMessage.findUnique({ where: { id: input.triggerMessageId } }),
     db.emailMessage.findMany({
       where: { threadId: input.threadId },
-      orderBy: { sentAt: 'asc' },
+      orderBy: { sentAt: 'desc' },
       take: 12,
       select: {
         direction: true,
@@ -98,15 +107,56 @@ export async function buildNegotiationContext(
     managerName: manager?.displayName ?? null,
     inboundSubject: triggerMessage.subject,
     inboundExcerpt: excerpt(triggerMessage.bodyText),
-    threadHistory: threadMessages.map((message) => ({
+    threadHistory: recentThreadMessagesToPromptHistory(threadMessages),
+    priceHighlights,
+    currentStrategy: summarizeNegotiationStrategy(negotiation?.strategy ?? null),
+  }
+}
+
+export function recentThreadMessagesToPromptHistory(messages: ThreadMessageForContext[]) {
+  return messages
+    .map((message) => ({
       direction: message.direction,
       from: message.fromName ?? message.fromEmail,
       sentAt: message.sentAt.toISOString(),
       excerpt: excerpt(message.bodyText) ?? message.subject,
-    })),
-    priceHighlights,
-    currentStrategy: negotiation?.strategy?.supplierAnalysis ?? null,
-  }
+    }))
+    .reverse()
+}
+
+export function summarizeNegotiationStrategy(
+  strategy: {
+    supplierAnalysis: string | null
+    strategyPlan: unknown
+    nextStep: string | null
+  } | null | undefined,
+) {
+  if (!strategy) return null
+
+  const parts = [
+    strategy.supplierAnalysis?.trim() ? `Анализ: ${strategy.supplierAnalysis.trim()}` : null,
+    formatStrategyPlan(strategy.strategyPlan),
+    strategy.nextStep?.trim() ? `Следующий шаг: ${strategy.nextStep.trim()}` : null,
+  ].filter((part): part is string => Boolean(part))
+
+  return parts.length > 0 ? parts.join('\n') : null
+}
+
+function formatStrategyPlan(value: unknown) {
+  if (!Array.isArray(value) || value.length === 0) return null
+
+  const steps = value
+    .map((step, index) => {
+      if (!step || typeof step !== 'object') return null
+      const record = step as Record<string, unknown>
+      const title = typeof record.title === 'string' ? record.title.trim() : ''
+      const description = typeof record.description === 'string' ? record.description.trim() : ''
+      if (!title && !description) return null
+      return `${index + 1}. ${title || 'Шаг'}${description ? `: ${description}` : ''}`
+    })
+    .filter((step): step is string => step !== null)
+
+  return steps.length > 0 ? `План:\n${steps.join('\n')}` : null
 }
 
 function excerpt(text: string | null | undefined, max = 240) {

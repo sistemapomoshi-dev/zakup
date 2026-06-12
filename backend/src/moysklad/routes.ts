@@ -5,6 +5,10 @@ import {
   priceComparisonListResponseSchema,
   moyskladAttachmentComparisonParamsSchema,
   moyskladAttachmentComparisonQuerySchema,
+  moyskladPriceSuggestionIdParamsSchema,
+  moyskladPriceSuggestionListQuerySchema,
+  moyskladPriceSuggestionListResponseSchema,
+  moyskladPriceSuggestionSchema,
 } from '@web-app-demo/contracts'
 import { createRoute, OpenAPIHono } from '@hono/zod-openapi'
 
@@ -68,6 +72,52 @@ const attachmentComparisonRoute = createRoute({
   },
 })
 
+const listPriceSuggestionsRoute = createRoute({
+  method: 'get',
+  path: '/price-suggestions',
+  request: { query: moyskladPriceSuggestionListQuerySchema },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: moyskladPriceSuggestionListResponseSchema } },
+      description: 'MoySklad price suggestions',
+    },
+    401: { content: errorResponseContent, description: 'Unauthorized' },
+  },
+})
+
+const createPriceSuggestionsRoute = createRoute({
+  method: 'post',
+  path: '/attachments/{attachmentId}/price-suggestions',
+  request: {
+    params: moyskladAttachmentComparisonParamsSchema,
+    query: moyskladAttachmentComparisonQuerySchema,
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: moyskladPriceSuggestionListResponseSchema } },
+      description: 'Generated MoySklad price suggestions from attachment',
+    },
+    401: { content: errorResponseContent, description: 'Unauthorized' },
+    403: { content: errorResponseContent, description: 'Forbidden' },
+    404: { content: errorResponseContent, description: 'Not found' },
+  },
+})
+
+const confirmPriceSuggestionRoute = createRoute({
+  method: 'post',
+  path: '/price-suggestions/{suggestionId}/confirm',
+  request: { params: moyskladPriceSuggestionIdParamsSchema },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: moyskladPriceSuggestionSchema } },
+      description: 'Confirmed MoySklad price suggestion',
+    },
+    401: { content: errorResponseContent, description: 'Unauthorized' },
+    403: { content: errorResponseContent, description: 'Forbidden' },
+    404: { content: errorResponseContent, description: 'Not found' },
+  },
+})
+
 export function createMoySkladRoutes() {
   const routes = new OpenAPIHono<MoySkladRouteEnv>({
     defaultHook: validationErrorHook,
@@ -98,6 +148,35 @@ export function createMoySkladRoutes() {
       { items: await moysklad.compareAttachment(attachmentId, supplierId ?? null) },
       200,
     )
+  })
+
+  routes.openapi(listPriceSuggestionsRoute, async (c) => {
+    const auth = c.get('authService')
+    const moysklad = c.get('moyskladService')
+    await requireUser(c, auth)
+    return c.json({ items: await moysklad.listPriceSuggestions(c.req.valid('query')) }, 200)
+  })
+
+  routes.openapi(createPriceSuggestionsRoute, async (c) => {
+    const auth = c.get('authService')
+    const moysklad = c.get('moyskladService')
+    const user = await requireUser(c, auth)
+    assertMoySkladSyncRole(user.role)
+    const { attachmentId } = c.req.valid('param')
+    const { supplierId } = c.req.valid('query')
+    return c.json(
+      { items: await moysklad.createPriceSuggestionsFromAttachment(attachmentId, supplierId ?? null) },
+      200,
+    )
+  })
+
+  routes.openapi(confirmPriceSuggestionRoute, async (c) => {
+    const auth = c.get('authService')
+    const moysklad = c.get('moyskladService')
+    const user = await requireUser(c, auth)
+    assertMoySkladSyncRole(user.role)
+    const { suggestionId } = c.req.valid('param')
+    return c.json(await moysklad.confirmPriceSuggestion(user.id, suggestionId), 200)
   })
 
   return routes
