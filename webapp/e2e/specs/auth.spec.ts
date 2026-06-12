@@ -49,7 +49,7 @@ test('registers, restores the session, opens protected UI, and logs out', async 
   await expect(page.getByRole('heading', { name: 'Session is active' })).toBeVisible()
 
   await page.getByRole('link', { name: 'Открыть поставщиков' }).click()
-  await expect(page.getByText(email)).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Поставщики' })).toBeVisible()
 
   await page.getByRole('button', { name: 'Logout' }).click()
   await expect(page.getByRole('heading', { name: 'Login required' })).toBeVisible()
